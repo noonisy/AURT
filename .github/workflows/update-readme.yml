@@ -1,0 +1,101 @@
+name: Update README
+
+on:
+    schedule:
+        - cron: "0/30 * * * *"
+    workflow_dispatch:
+
+permissions:
+    contents: write
+
+jobs:
+    update:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v3
+
+            - name: Define source repositories
+              id: source-repos
+              run: |
+                  echo "repos<<EOF" >> $GITHUB_OUTPUT
+                  cat repos.json >> $GITHUB_OUTPUT
+                  echo "EOF" >> $GITHUB_OUTPUT
+
+            - name: Get last update times
+              id: last-updates
+              run: |
+                  REPOS=$(echo '${{ steps.source-repos.outputs.repos }}' | jq -c '.')
+                  echo "[" > temp.json
+                  echo "$REPOS" | jq -c -r '.[]' | while read repo; do
+                    OWNER=$(echo $repo | jq -r '.owner')
+                    REPO_NAME=$(echo $repo | jq -r '.repo')
+                    LAST_UPDATE=$(curl -s -H "Authorization: token ${{ secrets.PAT }}" \
+                      "https://api.github.com/repos/$OWNER/$REPO_NAME" | jq -r '.pushed_at')
+                    echo "  {\"repo\": \"$OWNER/$REPO_NAME\", \"last_update\": \"$LAST_UPDATE\"}," >> temp.json
+                  done
+                  sed -i '$ s/,$//' temp.json
+                  echo "]" >> temp.json
+                  echo "updates<<EOF" >> $GITHUB_OUTPUT
+                  cat temp.json >> $GITHUB_OUTPUT
+                  echo "EOF" >> $GITHUB_OUTPUT
+
+            - name: Update README
+              run: |
+                  UPDATES=$(echo '${{ steps.last-updates.outputs.updates }}' | jq -r '.')
+                  CURRENT_TIME=$(date '+%s')
+                  README_CONTENT="## Last Update Times\n\n"
+
+                  while IFS= read -r line; do
+                    REPO=$(echo "$line" | jq -r '.repo')
+                    LAST_UPDATE_UTC=$(echo "$line" | jq -r '.last_update')
+
+                    LAST_UPDATE_TS=$(date -d "$LAST_UPDATE_UTC" '+%s')
+                    
+                    DIFF_SECONDS=$((CURRENT_TIME - LAST_UPDATE_TS))
+                    
+                    DAYS=$((DIFF_SECONDS / 86400))
+                    REMAINING_SECONDS=$((DIFF_SECONDS % 86400))
+                    HOURS=$((REMAINING_SECONDS / 3600))
+                    
+                    if [ $DAYS -eq 0 ]; then
+                      if [ $HOURS -eq 0 ]; then
+                        TIME_DIFF="刚刚"
+                      else
+                        TIME_DIFF="${HOURS}小时前"
+                      fi
+                    else
+                      TIME_DIFF="${DAYS}天${HOURS}小时前"
+                    fi
+                    
+                    README_CONTENT+="[$REPO](https://github.com/$REPO)：${TIME_DIFF}\n\n"
+                  done < <(echo "$UPDATES" | jq -c '.[]')
+
+                  echo -e "$README_CONTENT" > new_section.md
+                  CURRENT_TIME=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
+                  awk -v time="$CURRENT_TIME" '
+                    BEGIN{p=1} 
+                    /^## Last Update Times/{
+                      system("cat new_section.md")
+                      p=0
+                      next
+                    } 
+                    /^## RUN TIME/{
+                      print $0
+                      print time
+                      p=0
+                      next
+                    }
+                    /^## /{p=1}
+                    p{print}
+                  ' README.md > README.md.new
+
+                  mv README.md.new README.md
+                  rm new_section.md
+            - name: Commit and push changes
+              run: |
+                  git config --local user.email "action@github.com"
+                  git config --local user.name "GitHub Action"
+                  git add README.md
+                  git commit -m "Update last updated timestamps"
+                  git push
