@@ -2,7 +2,7 @@ name: Update README
 
 on:
     schedule:
-        - cron: "0/30 * * * *"
+        - cron: "0 18 * * *"
     workflow_dispatch:
 
 permissions:
@@ -80,7 +80,7 @@ jobs:
                       p=0
                       next
                     } 
-                    /^## RUN TIME/{
+                    /^## Run Time/{
                       print $0
                       print time
                       p=0
