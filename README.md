@@ -9,7 +9,7 @@
 
 [donknap/dpanel](https://github.com/donknap/dpanel)：8小时前
 
-[Calcium-Ion/new-api](https://github.com/Calcium-Ion/new-api)：3小时前
+[QuantumNous/new-api](https://github.com/QuantumNous/new-api)：3小时前
 
 
 ## Run Time
